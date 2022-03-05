@@ -11,6 +11,15 @@ class Activity {
   }
 }
 
+class Session {
+  constructor() {
+    this.startedAt = null;
+    this.endedAt = null;
+    this.activityIds = [];
+    this.durationSeconds = 0;
+  }
+}
+
 const getActivitiesData = () => {
   return new Promise((resolve, reject) => {
     axios
@@ -21,8 +30,7 @@ const getActivitiesData = () => {
         },
       })
       .then(function (response) {
-
-        const activities = [];
+        const activities = new Map();
 
         for (activity of response.data.activities) {
           const act = new Activity(
@@ -32,7 +40,16 @@ const getActivitiesData = () => {
             activity.first_seen_at
           );
 
-          activities.push(act);
+          if (
+            activities.get(act.userId) == null ||
+            activities.get(act.userId) == undefined
+          ) {
+            let userActivities = [];
+            userActivities.push(activity);
+            activities.set(act.userId, userActivities);
+          } else {
+            activities.get(act.userId).push(act);
+          }
         }
         resolve(activities);
       })
@@ -42,12 +59,61 @@ const getActivitiesData = () => {
   });
 };
 
-function getUserSessions(activities) => {
+// this function complexity is O(N^2), given that I iterate for every
+// user, and for each user, I iterate its own list of activities in order to calculate
+// all of the sessions data for that user
+function getUserSessions(activities) {
+  var sessionsMap = new Map();
 
+  for (const [userId, acts] of activities) {
+    console.log(userId, acts);
+
+    var sessions = [];
+    sessionsMap.set(userId, sessions);
+
+    if (acts.length > 1) {
+      const sortedActivities = acts.sort(
+        (a, b) => a.firstSeenAt - b.firstSeenAt
+      );
+
+      var prevAct = sortedActivities[0];
+
+      var session = new Session();
+
+      session.activityIds.push(prevAct.id);
+      session.startedAt = prevAct.firstSeenAt;
+
+      for (i = 1; i < sortedActivities.length; i++) {
+        let diffMs = sortedActivities[i].firstSeenAt - prevAct.answeredAt;
+
+        if (Math.round(((diffMs % 86400000) % 3600000) / 60000) <= 5) {
+          session.activityIds.push(sortedActivities[i].id);
+        } else {
+          session.endedAt = prevAct.answeredAt;
+          var diffSession = session.endedAt - session.startedAt;
+          session.durationSeconds =
+            Math.round(((diffSession % 86400000) % 3600000) / 60000) * 60;
+          sessions.push(session);
+          // Create a new session
+          session = new Session();
+          session.activityIds.push(sortedActivities[i].id);
+          session.startedAt = sortedActivities[i].firstSeenAt;
+        }
+        prevAct = sortedActivities[i];
+      }
+    }
+  }
+
+  console.log(sessionsMap);
+  return sessionsMap;
 }
 
 const activities = getActivitiesData();
 
 activities.then((res) => {
-  console.log(res);
+  var response = {
+    user_sessions: getUserSessions(res),
+  };
+
+  console.log(response);
 });
