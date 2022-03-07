@@ -1,5 +1,3 @@
-//import Activity from "./model/Activity";
-
 const axios = require("axios");
 
 class Activity {
@@ -45,7 +43,7 @@ const getActivitiesData = () => {
             activities.get(act.userId) == undefined
           ) {
             let userActivities = [];
-            userActivities.push(activity);
+            userActivities.push(act);
             activities.set(act.userId, userActivities);
           } else {
             activities.get(act.userId).push(act);
@@ -66,8 +64,6 @@ function getUserSessions(activities) {
   var sessionsMap = new Map();
 
   for (const [userId, acts] of activities) {
-    console.log(userId, acts);
-
     var sessions = [];
     sessionsMap.set(userId, sessions);
 
@@ -79,28 +75,46 @@ function getUserSessions(activities) {
       var prevAct = sortedActivities[0];
 
       var session = new Session();
-
       session.activityIds.push(prevAct.id);
       session.startedAt = prevAct.firstSeenAt;
+      sessions.push(session);
 
       for (i = 1; i < sortedActivities.length; i++) {
         let diffMs = sortedActivities[i].firstSeenAt - prevAct.answeredAt;
 
         if (Math.round(((diffMs % 86400000) % 3600000) / 60000) <= 5) {
           session.activityIds.push(sortedActivities[i].id);
+
+          if (i == sortedActivities.length - 1) {
+            session.endedAt = sortedActivities[i].answeredAt;
+            var diffSession = session.endedAt - session.startedAt;
+            session.durationSeconds =
+              Math.round(((diffSession % 86400000) % 3600000) / 60000) * 60;
+          }
         } else {
           session.endedAt = prevAct.answeredAt;
           var diffSession = session.endedAt - session.startedAt;
           session.durationSeconds =
             Math.round(((diffSession % 86400000) % 3600000) / 60000) * 60;
-          sessions.push(session);
+
           // Create a new session
           session = new Session();
           session.activityIds.push(sortedActivities[i].id);
           session.startedAt = sortedActivities[i].firstSeenAt;
+          sessions.push(session);
         }
         prevAct = sortedActivities[i];
       }
+    } else if (acts.length == 1) {
+      var session = new Session();
+      session.activityIds.push(prevAct.id);
+      session.startedAt = prevAct.firstSeenAt;
+      session.endedAt = prevAct.answeredAt;
+      var diffSession = session.endedAt - session.startedAt;
+      session.durationSeconds =
+        Math.round(((diffSession % 86400000) % 3600000) / 60000) * 60;
+
+      sessions.push(session);
     }
   }
 
@@ -108,12 +122,26 @@ function getUserSessions(activities) {
   return sessionsMap;
 }
 
+function postActivities(objectToPost) {
+  axios
+    .post("https://api.slangapp.com/challenges/v1/activities/sessions", {
+      headers: {
+        Authorization:
+          "Basic NDA6VTNlcFpQS1AzSmUrd01JOTJJWTA5OTVnVFRjQWZ3R1ByazMvTk9LVVhsdz0=",
+        "Content-Type": "application/json",
+      },
+      user_sessions: objectToPost,
+    })
+    .then(function (response) {
+      console.log(response);
+    })
+    .catch(function (error) {
+      console.log(error);
+    });
+}
+
 const activities = getActivitiesData();
 
 activities.then((res) => {
-  var response = {
-    user_sessions: getUserSessions(res),
-  };
-
-  console.log(response);
+  postActivities(getUserSessions(res));
 });
